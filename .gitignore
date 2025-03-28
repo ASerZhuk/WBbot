@@ -9,4 +9,4 @@ ENV/
 .idea/
 .vscode/
 firebase-credentials-temp.json
-*.log 
+*.log app/paymentbotwb-firebase-adminsdk-fbsvc-db087d202d.json

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: wb-review-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app.webhook_handler:app
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: FIREBASE_CREDENTIALS
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        value: paymentbotwb
+      - key: WEBHOOK_HOST
+        value: https://wb-review-bot.onrender.com 

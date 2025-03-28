@@ -1,0 +1,6 @@
+pyTelegramBotAPI
+g4f
+requests
+firebase-admin
+flask
+flask-cors 

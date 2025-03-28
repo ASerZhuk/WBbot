@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, redirect, render_template
 from flask_cors import CORS  # Добавляем импорт CORS
 from bot import bot, firebase_manager, payment_manager
-from config import WEBAPP_HOST, WEBAPP_PORT, BOT_TOKEN, WEBHOOK_HOST
+from config import WEBAPP_HOST, WEBAPP_PORT, BOT_TOKEN, WEBHOOK_HOST, WEBHOOK_PATH
 import telebot
 import os
 import logging
@@ -185,7 +185,7 @@ app.config.update(
 
 # Настройка webhook
 WEBHOOK_URL_BASE = WEBHOOK_HOST
-WEBHOOK_URL_PATH = f"/webhook/{BOT_TOKEN}"
+WEBHOOK_URL_PATH = WEBHOOK_PATH
 
 @app.before_request
 def log_request_info():

@@ -12,6 +12,11 @@ from functools import lru_cache
 from datetime import datetime
 import os
 
+# Настройка логирования
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 # Инициализация бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -480,25 +485,105 @@ def language_callback(call):
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
+    user_id = message.from_user.id
+    text = message.text
+    
     try:
-        logger.info(f"Received message: {message.text}")
+        # Отладочный вывод
+        logger.info(f"Received message: {text}")
         
-        # Временное решение для отладки
-        bot.reply_to(message, f"Получено сообщение: {message.text}\nНачинаю обработку...")
+        # Проверка на ссылку или артикул
+        is_valid_wb = text.isdigit() or ('wildberries' in text.lower() and 'catalog' in text.lower())
         
-        # Проверка на артикул или ссылку
-        if is_wildberries_link(message.text):
-            logger.info("Message is a Wildberries link")
-            # Логика обработки ссылки
-            process_wildberries_link(message)
-        elif is_article_number(message.text):
-            logger.info("Message is an article number")
-            # Логика обработки артикула
-            process_article_number(message)
-        else:
-            logger.info("Message is neither a link nor an article number")
-            # Другие сообщения
-            bot.reply_to(message, "Отправьте мне ссылку на товар или артикул с Wildberries.")
+        if not is_valid_wb:
+            bot.reply_to(message, "❌ Пожалуйста, отправьте корректную ссылку на товар с Wildberries или артикул товара.")
+            return
+        
+        # Проверка количества попыток
+        attempts = firebase_manager.get_user_attempts(user_id)
+        if attempts <= 0:
+            # Создаем клавиатуру с кнопками оплаты
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            payment_msg, buttons = payment_manager.get_payment_message()
+            
+            for button in buttons:
+                payment_button = types.InlineKeyboardButton(
+                    button['text'],
+                    callback_data=f"pay_{button['plan']}"
+                )
+                markup.add(payment_button)
+            
+            bot.reply_to(
+                message,
+                payment_msg,
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Отправка сообщения о начале анализа
+        processing_msg = bot.reply_to(
+            message, 
+            f"⏳ Анализирую отзывы... Это может занять некоторое время.\n"
+            f"У вас осталось попыток: {attempts}"
+        )
+        
+        try:
+            # Получение отзывов
+            review_handler = WbReview(text)
+            reviews = review_handler.parse()
+            
+            if not reviews:
+                bot.edit_message_text("❌ Не найдено отзывов для данного товара", 
+                                    chat_id=message.chat.id, 
+                                    message_id=processing_msg.message_id)
+                return
+                
+            # Преобразуем список отзывов в строку для кэширования
+            reviews_text = "\n".join(reviews)
+            
+            # Используем кэшированную функцию с артикулом товара
+            analysis = analyze_reviews_cached(review_handler.sku, reviews_text)
+            
+            # Уменьшаем количество попыток
+            remaining_attempts = firebase_manager.decrease_attempts(user_id)
+            
+            # Добавляем информацию о товаре и оставшихся попытках
+            analysis_with_info = (
+                f"🛍️ *{review_handler.item_name}*\n"
+                f"📦 Артикул: {review_handler.sku}\n\n"
+                f"{analysis}\n\n"
+                f"Осталось попыток: {remaining_attempts}"
+            )
+            
+            # Отправка результата с кнопками
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            view_button = types.InlineKeyboardButton(
+                "🔍 Посмотреть на WB",
+                url=f"https://www.wildberries.ru/catalog/{review_handler.sku}/detail.aspx"
+            )
+            share_button = types.InlineKeyboardButton(
+                "📤 Поделиться",
+                switch_inline_query=review_handler.sku
+            )
+            markup.add(view_button, share_button)
+            
+            bot.edit_message_text(
+                analysis_with_info,
+                chat_id=message.chat.id,
+                message_id=processing_msg.message_id,
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+            
+            # Сохраняем результаты анализа
+            firebase_manager.save_analysis(user_id, review_handler.sku, review_handler.item_name, analysis)
+            
+        except Exception as e:
+            logger.error(f"Error analyzing product: {str(e)}", exc_info=True)
+            bot.edit_message_text(f"❌ Произошла ошибка: {str(e)}", 
+                                chat_id=message.chat.id,
+                                message_id=processing_msg.message_id)
     except Exception as e:
         logger.error(f"Error handling message: {str(e)}", exc_info=True)
         bot.reply_to(message, "Произошла ошибка при обработке сообщения. Попробуйте позже.")
@@ -559,21 +644,15 @@ def inline_query(query):
     except Exception as e:
         logging.error(f"Error in inline query: {str(e)}")
 
-def track_analytics(user_id, action, details=None):
-    """Отслеживание действий пользователя для аналитики"""
-    analytics_data = {
-        'user_id': user_id,
-        'action': action,
-        'timestamp': datetime.now()
-    }
-    
-    if details:
-        analytics_data.update(details)
-    
+def track_analytics(user_id, event_type, params=None):
+    """Отслеживание аналитики"""
     try:
-        firebase_manager.db.collection('analytics').add(analytics_data)
+        # Здесь можно добавить код для отслеживания аналитики
+        # Например, запись в Firebase
+        pass
     except Exception as e:
-        logging.error(f"Error tracking analytics: {str(e)}")
+        logger.error(f"Error tracking analytics: {str(e)}")
+        pass  # Игнорируем ошибки аналитики
 
 @bot.message_handler(commands=['export'])
 def export_command(message):
@@ -1460,6 +1539,38 @@ def process_article_number(message, article=None):
     except Exception as e:
         logger.error(f"Error processing article number: {str(e)}", exc_info=True)
         bot.reply_to(message, "Произошла ошибка при обработке артикула. Попробуйте позже.")
+
+def send_no_attempts_message(message):
+    """Отправка сообщения о том, что у пользователя закончились попытки"""
+    # Создаем клавиатуру с кнопками оплаты
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    payment_msg, buttons = payment_manager.get_payment_message()
+    
+    for button in buttons:
+        payment_button = types.InlineKeyboardButton(
+            button['text'],
+            callback_data=f"pay_{button['plan']}"
+        )
+        markup.add(payment_button)
+    
+    bot.reply_to(
+        message,
+        payment_msg,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+def extract_article_from_link(link):
+    """Извлечение артикула из ссылки на Wildberries"""
+    try:
+        pattern = r"\d{7,15}"
+        sku = re.findall(pattern, link)
+        if sku:
+            return sku[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error extracting article from link: {str(e)}")
+        return None
 
 if __name__ == '__main__':
     # Проверяем, что все обработчики зарегистрированы

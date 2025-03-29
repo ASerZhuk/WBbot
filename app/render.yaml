@@ -3,7 +3,7 @@ services:
     name: wb-review-bot
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn webhook_handler:app
+    startCommand: python webhook_handler.py
     envVars:
       - key: BOT_TOKEN
         sync: false

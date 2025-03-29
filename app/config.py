@@ -53,6 +53,10 @@ YOOMONEY_WALLET = os.environ.get('YOOMONEY_WALLET', "4100117527556990")
 YOOMONEY_AMOUNT = float(os.environ.get('YOOMONEY_AMOUNT', 100.00))
 
 # URL для webhook
-WEBHOOK_HOST = os.environ.get('WEBHOOK_HOST', 'https://wb-review-bot.onrender.com')
+WEBHOOK_HOST = os.environ.get('WEBHOOK_HOST', 'https://wbbot-isx8.onrender.com')
 WEBHOOK_PATH = '/webhook/' + BOT_TOKEN
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+
+# Для совместимости с существующим кодом
+WEBHOOK_URL_BASE = WEBHOOK_HOST
+WEBHOOK_URL_PATH = WEBHOOK_PATH

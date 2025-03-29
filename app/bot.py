@@ -491,10 +491,13 @@ def handle_message(message):
     try:
         # Отладочный вывод
         logger.info(f"Received message: {text}")
-    
+        
+        # Временное решение для отладки
+        bot.reply_to(message, f"Получено сообщение: {text}\nНачинаю обработку...")
+        
         # Проверка на ссылку или артикул
         is_valid_wb = text.isdigit() or ('wildberries' in text.lower() and 'catalog' in text.lower())
-    
+        
         if not is_valid_wb:
             bot.reply_to(message, "❌ Пожалуйста, отправьте корректную ссылку на товар с Wildberries или артикул товара.")
             return
@@ -1531,14 +1534,70 @@ def process_article_number(message, article=None):
             return
         
         # Отправляем сообщение о начале анализа
-        bot.reply_to(message, "Начинаю анализ отзывов... Это может занять некоторое время.")
+        processing_msg = bot.reply_to(
+            message, 
+            f"⏳ Анализирую отзывы... Это может занять некоторое время.\n"
+            f"У вас осталось попыток: {attempts}"
+        )
         
-        # Здесь должен быть код для анализа отзывов
-        # ...
+        # Получение отзывов
+        review_handler = WbReview(article)
+        reviews = review_handler.parse()
+        
+        if not reviews:
+            bot.edit_message_text("❌ Не найдено отзывов для данного товара", 
+                                chat_id=message.chat.id, 
+                                message_id=processing_msg.message_id)
+            return
+        
+        # Преобразуем список отзывов в строку для кэширования
+        reviews_text = "\n".join(reviews)
+        
+        # Используем кэшированную функцию с артикулом товара
+        analysis = analyze_reviews_cached(review_handler.sku, reviews_text)
+        
+        # Уменьшаем количество попыток
+        remaining_attempts = firebase_manager.decrease_attempts(user_id)
+        
+        # Добавляем информацию о товаре и оставшихся попытках
+        analysis_with_info = (
+            f"🛍️ *{review_handler.item_name}*\n"
+            f"📦 Артикул: {review_handler.sku}\n\n"
+            f"{analysis}\n\n"
+            f"Осталось попыток: {remaining_attempts}"
+        )
+        
+        # Отправка результата с кнопками
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        view_button = types.InlineKeyboardButton(
+            "🔍 Посмотреть на WB",
+            url=f"https://www.wildberries.ru/catalog/{review_handler.sku}/detail.aspx"
+        )
+        share_button = types.InlineKeyboardButton(
+            "📤 Поделиться",
+            switch_inline_query=review_handler.sku
+        )
+        markup.add(view_button, share_button)
+        
+        bot.edit_message_text(
+            analysis_with_info,
+            chat_id=message.chat.id,
+            message_id=processing_msg.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        
+        # Сохраняем результаты анализа
+        firebase_manager.save_analysis(user_id, review_handler.sku, review_handler.item_name, analysis)
         
     except Exception as e:
         logger.error(f"Error processing article number: {str(e)}", exc_info=True)
-        bot.reply_to(message, "Произошла ошибка при обработке артикула. Попробуйте позже.")
+        if 'processing_msg' in locals():
+            bot.edit_message_text(f"❌ Произошла ошибка: {str(e)}", 
+                                chat_id=message.chat.id,
+                                message_id=processing_msg.message_id)
+        else:
+            bot.reply_to(message, f"❌ Произошла ошибка: {str(e)}")
 
 def send_no_attempts_message(message):
     """Отправка сообщения о том, что у пользователя закончились попытки"""

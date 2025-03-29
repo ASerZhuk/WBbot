@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, redirect, render_template
 from flask_cors import CORS  # Добавляем импорт CORS
 from bot import bot, firebase_manager, payment_manager
-from config import BOT_TOKEN, WEBHOOK_HOST, WEBHOOK_PATH
+from config import BOT_TOKEN, WEBHOOK_HOST, WEBHOOK_PATH, WEBHOOK_URL_BASE, WEBHOOK_URL_PATH
 import telebot
 import os
 import logging
@@ -244,7 +244,7 @@ def status():
             'template_dir': template_dir
         }), 500
 
-@app.route(WEBHOOK_URL_PATH, methods=['POST'])
+@app.route(WEBHOOK_PATH, methods=['POST'])
 def webhook():
     logger.info(f"Received webhook request: {request.get_data().decode('utf-8')}")
     if request.headers.get('content-type') == 'application/json':
@@ -361,9 +361,11 @@ def debug():
 def set_webhook():
     try:
         bot.remove_webhook()
-        bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
-        logger.info(f"Webhook set to {WEBHOOK_URL_BASE + WEBHOOK_URL_PATH}")
-        return jsonify({'status': 'ok', 'message': f'Webhook set to {WEBHOOK_URL_BASE + WEBHOOK_URL_PATH}'})
+        # Добавляем отладочный вывод
+        logger.info(f"Setting webhook with URL: {WEBHOOK_HOST + WEBHOOK_PATH}")
+        bot.set_webhook(url=WEBHOOK_HOST + WEBHOOK_PATH)
+        logger.info(f"Webhook set to {WEBHOOK_HOST + WEBHOOK_PATH}")
+        return jsonify({'status': 'ok', 'message': f'Webhook set to {WEBHOOK_HOST + WEBHOOK_PATH}'})
     except Exception as e:
         logger.error(f"Error setting webhook: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)})

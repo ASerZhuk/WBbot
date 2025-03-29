@@ -2,6 +2,9 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime, timedelta
 from config import FIREBASE_CREDENTIALS, FIREBASE_PROJECT_ID
+import logging
+
+logger = logging.getLogger(__name__)
 
 class FirebaseManager:
     def __init__(self):
@@ -253,4 +256,19 @@ class FirebaseManager:
             'amount': amount,
             'plan': plan,
             'created_at': datetime.now()
-        }) 
+        })
+
+    def get_attempts(self, user_id):
+        try:
+            doc_ref = self.db.collection('users').document(str(user_id))
+            doc = doc_ref.get()
+            if doc.exists:
+                user_data = doc.to_dict()
+                return user_data.get('attempts', 0)
+            else:
+                # Создаем документ для нового пользователя
+                doc_ref.set({'attempts': 0, 'created_at': firestore.SERVER_TIMESTAMP})
+                return 0
+        except Exception as e:
+            logger.error(f"Error getting attempts for user {user_id}: {str(e)}")
+            return 0 

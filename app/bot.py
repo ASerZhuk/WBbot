@@ -480,103 +480,28 @@ def language_callback(call):
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
-    user_id = message.from_user.id
-    text = message.text
-    
-    # Отслеживаем действие
-    track_analytics(user_id, 'message_sent', {'text_length': len(text)})
-    
-    # Проверка на ссылку или артикул
-    is_valid_wb = text.isdigit() or ('wildberries' in text.lower() and 'catalog' in text.lower())
-    
-    if not is_valid_wb:
-        bot.reply_to(message, "❌ Пожалуйста, отправьте корректную ссылку на товар с Wildberries или артикул товара.")
-        return
-    
-    # Проверка количества попыток
-    attempts = firebase_manager.get_user_attempts(user_id)
-    if attempts <= 0:
-        # Создаем клавиатуру с кнопками оплаты
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        payment_msg, buttons = payment_manager.get_payment_message()
-        
-        for button in buttons:
-            payment_button = types.InlineKeyboardButton(
-                button['text'],
-                callback_data=f"pay_{button['plan']}"
-            )
-            markup.add(payment_button)
-        
-        bot.reply_to(
-            message,
-            payment_msg,
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-        return
-    
-    # Отправка сообщения о начале анализа
-    processing_msg = bot.reply_to(
-        message, 
-        f"⏳ Анализирую отзывы... Это может занять некоторое время.\n"
-        f"У вас осталось попыток: {attempts}"
-    )
-    
     try:
-        # Получение отзывов
-        review_handler = WbReview(text)
-        reviews = review_handler.parse()
+        logger.info(f"Received message: {message.text}")
         
-        if not reviews:
-            bot.edit_message_text("❌ Не найдено отзывов для данного товара", 
-                                chat_id=message.chat.id, 
-                                message_id=processing_msg.message_id)
-            return
-            
-        # Преобразуем список отзывов в строку для кэширования
-        reviews_text = "\n".join(reviews)
+        # Временное решение для отладки
+        bot.reply_to(message, f"Получено сообщение: {message.text}\nНачинаю обработку...")
         
-        # Используем кэшированную функцию с артикулом товара
-        analysis = analyze_reviews_cached(review_handler.sku, reviews_text)
-        
-        # Уменьшаем количество попыток
-        remaining_attempts = firebase_manager.decrease_attempts(user_id)
-        
-        # Добавляем информацию о товаре и оставшихся попытках
-        analysis_with_info = (
-            f"🛍️ *{review_handler.item_name}*\n"
-            f"📦 Артикул: {review_handler.sku}\n\n"
-            f"{analysis}\n\n"
-            f"Осталось попыток: {remaining_attempts}"
-        )
-        
-        # Отправка результата с кнопками
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        view_button = types.InlineKeyboardButton(
-            "🔍 Посмотреть на WB",
-            url=f"https://www.wildberries.ru/catalog/{review_handler.sku}/detail.aspx"
-        )
-        share_button = types.InlineKeyboardButton(
-            "📤 Поделиться",
-            switch_inline_query=review_handler.sku
-        )
-        markup.add(view_button, share_button)
-        
-        bot.edit_message_text(
-            analysis_with_info,
-            chat_id=message.chat.id,
-            message_id=processing_msg.message_id,
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-        
-        # Сохраняем результаты анализа
-        firebase_manager.save_analysis(user_id, review_handler.sku, review_handler.item_name, analysis)
-        
+        # Проверка на артикул или ссылку
+        if is_wildberries_link(message.text):
+            logger.info("Message is a Wildberries link")
+            # Логика обработки ссылки
+            process_wildberries_link(message)
+        elif is_article_number(message.text):
+            logger.info("Message is an article number")
+            # Логика обработки артикула
+            process_article_number(message)
+        else:
+            logger.info("Message is neither a link nor an article number")
+            # Другие сообщения
+            bot.reply_to(message, "Отправьте мне ссылку на товар или артикул с Wildberries.")
     except Exception as e:
-        bot.edit_message_text(f"❌ Произошла ошибка: {str(e)}", 
-                            chat_id=message.chat.id,
-                            message_id=processing_msg.message_id)
+        logger.error(f"Error handling message: {str(e)}", exc_info=True)
+        bot.reply_to(message, "Произошла ошибка при обработке сообщения. Попробуйте позже.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('pay_'))
 def handle_payment_callback(call):
@@ -1483,6 +1408,58 @@ def process_add_attempts_to_user(message, target_user_id):
             f"❌ Ошибка: {str(e)}. Введите положительное число.",
             reply_markup=markup
         )
+
+# Функция для проверки, является ли текст ссылкой на Wildberries
+def is_wildberries_link(text):
+    logger.debug(f"Checking if text is a Wildberries link: {text}")
+    # Проверка на ссылку Wildberries
+    return bool(re.search(r'https?://[^/]*wildberries\.ru/[^\s]+', text))
+
+# Функция для проверки, является ли текст артикулом
+def is_article_number(text):
+    logger.debug(f"Checking if text is an article number: {text}")
+    # Проверка на артикул (обычно это число)
+    return bool(re.match(r'^\d+$', text.strip()))
+
+def process_wildberries_link(message):
+    try:
+        # Извлекаем артикул из ссылки
+        article = extract_article_from_link(message.text)
+        if article:
+            logger.info(f"Extracted article {article} from link")
+            # Обрабатываем артикул
+            process_article_number(message, article)
+        else:
+            logger.warning(f"Could not extract article from link: {message.text}")
+            bot.reply_to(message, "Не удалось извлечь артикул из ссылки. Пожалуйста, отправьте артикул напрямую.")
+    except Exception as e:
+        logger.error(f"Error processing Wildberries link: {str(e)}", exc_info=True)
+        bot.reply_to(message, "Произошла ошибка при обработке ссылки. Попробуйте отправить артикул напрямую.")
+
+def process_article_number(message, article=None):
+    try:
+        # Используем переданный артикул или берем из сообщения
+        article = article or message.text.strip()
+        
+        # Проверяем, есть ли у пользователя доступные попытки
+        user_id = message.from_user.id
+        attempts = firebase_manager.get_attempts(user_id)
+        
+        if attempts <= 0:
+            # У пользователя нет попыток
+            logger.info(f"User {user_id} has no attempts left")
+            send_no_attempts_message(message)
+            return
+        
+        # Отправляем сообщение о начале анализа
+        bot.reply_to(message, "Начинаю анализ отзывов... Это может занять некоторое время.")
+        
+        # Здесь должен быть код для анализа отзывов
+        # ...
+        
+    except Exception as e:
+        logger.error(f"Error processing article number: {str(e)}", exc_info=True)
+        bot.reply_to(message, "Произошла ошибка при обработке артикула. Попробуйте позже.")
 
 if __name__ == '__main__':
     # Проверяем, что все обработчики зарегистрированы

@@ -1,13 +1,26 @@
 import os
 import json
-from dotenv import load_dotenv
 import pathlib
 
 # Определяем базовую директорию
 BASE_DIR = pathlib.Path(__file__).parent
 
+# Функция для загрузки .env файла (простая замена dotenv)
+def load_env_file():
+    env_path = BASE_DIR / '.env'
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    os.environ[key] = value
+
 # Загружаем переменные окружения из .env файла (если он существует)
-load_dotenv()
+try:
+    load_env_file()
+except Exception:
+    pass  # Игнорируем ошибки при загрузке .env файла
 
 # Токен бота
 BOT_TOKEN = os.environ.get('BOT_TOKEN', 'ваш_токен_бота')

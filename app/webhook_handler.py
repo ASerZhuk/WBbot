@@ -229,6 +229,8 @@ def status():
             'status': 'ok',
             'bot_username': bot_info.username,
             'server': 'running',
+            'bot_token_length': len(BOT_TOKEN),
+            'webhook_host': WEBHOOK_HOST,
             'template_dir_exists': os.path.exists(template_dir),
             'templates': os.listdir(template_dir) if os.path.exists(template_dir) else []
         }
@@ -244,6 +246,7 @@ def status():
 
 @app.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
+    logger.info(f"Received webhook request: {request.get_data().decode('utf-8')}")
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)

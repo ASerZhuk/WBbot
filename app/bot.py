@@ -491,10 +491,10 @@ def handle_message(message):
     try:
         # Отладочный вывод
         logger.info(f"Received message: {text}")
-        
+    
         # Проверка на ссылку или артикул
         is_valid_wb = text.isdigit() or ('wildberries' in text.lower() and 'catalog' in text.lower())
-        
+    
         if not is_valid_wb:
             bot.reply_to(message, "❌ Пожалуйста, отправьте корректную ссылку на товар с Wildberries или артикул товара.")
             return
